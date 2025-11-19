@@ -1,0 +1,668 @@
+-- Anti-Detect Cheat Script mit Rayfield UI
+local Players = game:GetService('Players')
+local RunService = game:GetService('RunService')
+local UserInputService = game:GetService('UserInputService')
+local TweenService = game:GetService('TweenService')
+
+local LocalPlayer = Players.LocalPlayer
+local Mouse = LocalPlayer:GetMouse()
+
+-- Rayfield UI sicher laden
+local success, Rayfield = pcall(function()
+    return loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+end)
+
+if not success then
+    warn('Rayfield konnte nicht geladen werden, verwende Fallback UI')
+    -- Fallback UI hier einfügen falls gewünscht
+    return
+end
+
+-- Zufällige Namen für Anti-Detect
+local randomNames = {
+    'GameHelper',
+    'PlayerAssistant',
+    'UI_Enhancer',
+    'ControlPanel',
+    'SettingsManager',
+    'VisualAssistant',
+    'GameTools',
+    'HelperModule',
+}
+
+local function getRandomName()
+    return randomNames[math.random(1, #randomNames)]
+end
+
+-- Konfiguration
+local Config = {
+    Visuals = {
+        Enabled = true,
+        TeamCheck = false,
+        ShowDistance = true,
+        BoxColor = Color3.fromRGB(255, 100, 100),
+        TextColor = Color3.fromRGB(255, 255, 255),
+        UseTeamColor = false,
+    },
+    Targeting = {
+        Enabled = true,
+        Keybind = 'RightMouse',
+        FOV = 70,
+        Smoothness = 0.15,
+        TeamCheck = false,
+        VisibleCheck = false,
+        AimPart = 'HumanoidRootPart',
+    },
+    AutoAim = {
+        Enabled = true,
+        HitChance = 95,
+    },
+    Appearance = {
+        Enabled = true,
+        ArmsColor = Color3.fromRGB(200, 50, 200),
+        WeaponColor = Color3.fromRGB(50, 200, 200),
+        ArmsMaterial = 'ForceField',
+        WeaponMaterial = 'Neon',
+    },
+    Misc = {
+        Spinbot = false,
+        SpinSpeed = 10,
+    },
+}
+
+-- FOV Circle
+local FOVCircle = Drawing.new('Circle')
+FOVCircle.Visible = false
+FOVCircle.Radius = Config.Targeting.FOV
+FOVCircle.Color = Color3.new(1, 1, 1)
+FOVCircle.Thickness = 1
+FOVCircle.Filled = false
+
+-- Visuals System (ESP)
+local Visuals = {
+    Objects = {},
+}
+
+function Visuals:CreateVisual(player)
+    if self.Objects[player] then
+        return
+    end
+
+    local highlight = Instance.new('Highlight')
+    highlight.Name = getRandomName()
+    highlight.FillTransparency = 0.85
+    highlight.OutlineTransparency = 0.1
+
+    if Config.Visuals.UseTeamColor and player.Team then
+        highlight.OutlineColor = player.Team.TeamColor.Color
+        highlight.FillColor = player.Team.TeamColor.Color
+    else
+        highlight.OutlineColor = Config.Visuals.BoxColor
+        highlight.FillColor = Config.Visuals.BoxColor
+    end
+
+    local infoGui = Instance.new('BillboardGui')
+    infoGui.Name = getRandomName()
+    infoGui.Size = UDim2.new(0, 80, 0, 30)
+    infoGui.StudsOffset = Vector3.new(0, 3, 0)
+    infoGui.AlwaysOnTop = true
+
+    local infoText = Instance.new('TextLabel')
+    infoText.Size = UDim2.new(1, 0, 1, 0)
+    infoText.BackgroundTransparency = 1
+    infoText.TextColor3 = Config.Visuals.TextColor
+    infoText.TextStrokeTransparency = 0
+    infoText.TextSize = 11
+    infoText.Font = Enum.Font.SourceSans
+    infoText.Text = player.Name
+
+    infoText.Parent = infoGui
+
+    self.Objects[player] = {
+        Highlight = highlight,
+        InfoGui = infoGui,
+        InfoText = infoText,
+    }
+end
+
+function Visuals:UpdateVisuals()
+    for player, visual in pairs(self.Objects) do
+        if
+            player.Character
+            and player.Character:FindFirstChild('HumanoidRootPart')
+        then
+            local rootPart = player.Character.HumanoidRootPart
+
+            if not visual.Highlight.Parent then
+                visual.Highlight.Parent = player.Character
+            end
+
+            if not visual.InfoGui.Parent then
+                visual.InfoGui.Parent = rootPart
+            end
+
+            if
+                LocalPlayer.Character
+                and LocalPlayer.Character:FindFirstChild('HumanoidRootPart')
+            then
+                local distance = (
+                    rootPart.Position
+                    - LocalPlayer.Character.HumanoidRootPart.Position
+                ).Magnitude
+                visual.InfoText.Text = player.Name
+                    .. ' ('
+                    .. math.floor(distance)
+                    .. ')'
+            end
+        else
+            visual.Highlight:Destroy()
+            visual.InfoGui:Destroy()
+            self.Objects[player] = nil
+        end
+    end
+end
+
+function Visuals:Toggle(state)
+    Config.Visuals.Enabled = state
+    if not state then
+        for player, visual in pairs(self.Objects) do
+            visual.Highlight:Destroy()
+            visual.InfoGui:Destroy()
+        end
+        self.Objects = {}
+    end
+end
+
+-- Targeting System (Aimbot)
+local Targeting = {
+    Target = nil,
+    Aiming = false,
+}
+
+function Targeting:GetClosestTarget()
+    local closestTarget = nil
+    local closestDistance = Config.Targeting.FOV
+
+    local camera = workspace.CurrentCamera
+    local center =
+        Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2)
+
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            local humanoid = player.Character:FindFirstChild('Humanoid')
+            local rootPart = player.Character:FindFirstChild('HumanoidRootPart')
+
+            if humanoid and humanoid.Health > 0 and rootPart then
+                local screenPoint, onScreen =
+                    camera:WorldToViewportPoint(rootPart.Position)
+
+                if onScreen then
+                    local playerPos = Vector2.new(screenPoint.X, screenPoint.Y)
+                    local distance = (center - playerPos).Magnitude
+
+                    if distance < closestDistance then
+                        closestDistance = distance
+                        closestTarget = player
+                    end
+                end
+            end
+        end
+    end
+
+    return closestTarget
+end
+
+function Targeting:AimAtTarget()
+    if not self.Target or not self.Target.Character then
+        return
+    end
+
+    local targetPart =
+        self.Target.Character:FindFirstChild(Config.Targeting.AimPart)
+    if not targetPart then
+        return
+    end
+
+    local camera = workspace.CurrentCamera
+    local targetPosition = targetPart.Position + Vector3.new(0, 1.2, 0) -- Körpermitte
+
+    local currentCFrame = camera.CFrame
+    local newCFrame = CFrame.lookAt(currentCFrame.Position, targetPosition)
+
+    camera.CFrame = currentCFrame:Lerp(newCFrame, Config.Targeting.Smoothness)
+end
+
+function Targeting:UpdateFOV()
+    FOVCircle.Radius = Config.Targeting.FOV
+    FOVCircle.Position = Vector2.new(
+        workspace.CurrentCamera.ViewportSize.X / 2,
+        workspace.CurrentCamera.ViewportSize.Y / 2
+    )
+    FOVCircle.Visible = Config.Targeting.Enabled
+end
+
+-- AutoAim System (Silent Aim)
+local AutoAim = {
+    Hooked = false,
+}
+
+function AutoAim:SetupAutoAim()
+    if self.Hooked then
+        return
+    end
+
+    -- Metatable Hook für alle Remotes (sicherer)
+    local mt = getrawmetatable(game)
+    local oldNamecall = mt.__namecall
+
+    setreadonly(mt, false)
+
+    mt.__namecall = newcclosure(function(self, ...)
+        local method = getnamecallmethod()
+        local args = { ... }
+
+        -- Prüfe auf Schuss-Events ohne spezifische Namen
+        if method == 'FireServer' then
+            local remoteName = tostring(self)
+            if
+                remoteName:find('Shot')
+                or remoteName:find('Fire')
+                or remoteName:find('Hit')
+                or remoteName:find('Damage')
+            then
+                if
+                    Config.AutoAim.Enabled
+                    and Targeting.Target
+                    and math.random(1, 100) <= Config.AutoAim.HitChance
+                then
+                    print('[AutoAim] Activated on: ' .. remoteName)
+                    -- Hier könnten Schussdaten modifiziert werden
+                end
+            end
+        end
+
+        return oldNamecall(self, unpack(args))
+    end)
+
+    setreadonly(mt, true)
+
+    self.Hooked = true
+end
+
+-- Appearance System (Chams)
+local Appearance = {
+    Arms = {},
+    Weapons = {},
+}
+
+function Appearance:ApplyArms()
+    if not Config.Appearance.Enabled then
+        self:RemoveArms()
+        return
+    end
+
+    if LocalPlayer.Character then
+        for _, part in pairs(LocalPlayer.Character:GetDescendants()) do
+            if
+                part:IsA('BasePart')
+                and (
+                    part.Name:lower():find('arm')
+                    or part.Name:lower():find('hand')
+                )
+            then
+                if not self.Arms[part] then
+                    local highlight = Instance.new('Highlight')
+                    highlight.Name = getRandomName()
+                    highlight.FillColor = Config.Appearance.ArmsColor
+                    highlight.OutlineColor = Config.Appearance.ArmsColor
+                    highlight.FillTransparency = 0.7
+                    highlight.OutlineTransparency = 0.3
+                    highlight.Parent = part
+
+                    self.Arms[part] = highlight
+                end
+            end
+        end
+    end
+end
+
+function Appearance:ApplyWeapons()
+    if not Config.Appearance.Enabled then
+        self:RemoveWeapons()
+        return
+    end
+
+    if LocalPlayer.Character then
+        for _, item in pairs(LocalPlayer.Character:GetChildren()) do
+            if item:IsA('Tool') then
+                for _, part in pairs(item:GetDescendants()) do
+                    if part:IsA('BasePart') and not self.Weapons[part] then
+                        local highlight = Instance.new('Highlight')
+                        highlight.Name = getRandomName()
+                        highlight.FillColor = Config.Appearance.WeaponColor
+                        highlight.OutlineColor = Config.Appearance.WeaponColor
+                        highlight.FillTransparency = 0.5
+                        highlight.OutlineTransparency = 0.2
+                        highlight.Parent = part
+
+                        self.Weapons[part] = highlight
+                    end
+                end
+            end
+        end
+    end
+end
+
+function Appearance:RemoveArms()
+    for part, highlight in pairs(self.Arms) do
+        if highlight and highlight.Parent then
+            highlight:Destroy()
+        end
+    end
+    self.Arms = {}
+end
+
+function Appearance:RemoveWeapons()
+    for part, highlight in pairs(self.Weapons) do
+        if highlight and highlight.Parent then
+            highlight:Destroy()
+        end
+    end
+    self.Weapons = {}
+end
+
+function Appearance:Toggle(state)
+    Config.Appearance.Enabled = state
+    if not state then
+        self:RemoveArms()
+        self:RemoveWeapons()
+    else
+        wait(0.5)
+        self:ApplyArms()
+        self:ApplyWeapons()
+    end
+end
+
+-- Spinbot System
+local Spinbot = {}
+function Spinbot:Rotate()
+    if not LocalPlayer.Character then
+        return
+    end
+    local rootPart = LocalPlayer.Character:FindFirstChild('HumanoidRootPart')
+    if not rootPart then
+        return
+    end
+
+    rootPart.CFrame = rootPart.CFrame
+        * CFrame.Angles(0, math.rad(Config.Misc.SpinSpeed), 0)
+end
+
+-- Rayfield UI erstellen
+local Window = Rayfield:CreateWindow({
+    Name = 'Game Assistant',
+    LoadingTitle = 'Loading Assistant...',
+    LoadingSubtitle = 'Please wait',
+    ConfigurationSaving = {
+        Enabled = false,
+    },
+    Discord = {
+        Enabled = false,
+    },
+    KeySystem = false,
+})
+
+-- Main Tab
+local MainTab = Window:CreateTab('Main Features', 4483362458)
+
+-- Targeting Section
+local TargetingSection = MainTab:CreateSection('Targeting Assistance')
+
+local TargetingToggle = MainTab:CreateToggle({
+    Name = 'Targeting Assistance',
+    CurrentValue = Config.Targeting.Enabled,
+    Flag = 'TargetingToggle',
+    Callback = function(Value)
+        Config.Targeting.Enabled = Value
+        Targeting:UpdateFOV()
+    end,
+})
+
+local FOVSlider = MainTab:CreateSlider({
+    Name = 'Assist Range',
+    Range = { 10, 200 },
+    Increment = 5,
+    Suffix = 'px',
+    CurrentValue = Config.Targeting.FOV,
+    Flag = 'FOVSlider',
+    Callback = function(Value)
+        Config.Targeting.FOV = Value
+        Targeting:UpdateFOV()
+    end,
+})
+
+local SmoothnessSlider = MainTab:CreateSlider({
+    Name = 'Smooth Assistance',
+    Range = { 0.01, 1 },
+    Increment = 0.01,
+    Suffix = '',
+    CurrentValue = Config.Targeting.Smoothness,
+    Flag = 'SmoothnessSlider',
+    Callback = function(Value)
+        Config.Targeting.Smoothness = Value
+    end,
+})
+
+local AutoAimToggle = MainTab:CreateToggle({
+    Name = 'Auto Assistance',
+    CurrentValue = Config.AutoAim.Enabled,
+    Flag = 'AutoAimToggle',
+    Callback = function(Value)
+        Config.AutoAim.Enabled = Value
+        if Value and not AutoAim.Hooked then
+            AutoAim:SetupAutoAim()
+        end
+    end,
+})
+
+-- Visuals Section
+local VisualsSection = MainTab:CreateSection('Visual Assistance')
+
+local VisualsToggle = MainTab:CreateToggle({
+    Name = 'Visual Assistance',
+    CurrentValue = Config.Visuals.Enabled,
+    Flag = 'VisualsToggle',
+    Callback = function(Value)
+        Config.Visuals.Enabled = Value
+        Visuals:Toggle(Value)
+    end,
+})
+
+local AppearanceToggle = MainTab:CreateToggle({
+    Name = 'Appearance Effects',
+    CurrentValue = Config.Appearance.Enabled,
+    Flag = 'AppearanceToggle',
+    Callback = function(Value)
+        Config.Appearance.Enabled = Value
+        Appearance:Toggle(Value)
+    end,
+})
+
+local TeamColorToggle = MainTab:CreateToggle({
+    Name = 'Team Based Colors',
+    CurrentValue = Config.Visuals.UseTeamColor,
+    Flag = 'TeamColorToggle',
+    Callback = function(Value)
+        Config.Visuals.UseTeamColor = Value
+        if Config.Visuals.Enabled then
+            Visuals:Toggle(false)
+            wait()
+            Visuals:Toggle(true)
+        end
+    end,
+})
+
+-- Misc Section
+local MiscSection = MainTab:CreateSection('Additional Features')
+
+local SpinbotToggle = MainTab:CreateToggle({
+    Name = 'Rotation Effect',
+    CurrentValue = Config.Misc.Spinbot,
+    Flag = 'SpinbotToggle',
+    Callback = function(Value)
+        Config.Misc.Spinbot = Value
+    end,
+})
+
+local SpinSpeedSlider = MainTab:CreateSlider({
+    Name = 'Rotation Speed',
+    Range = { 1, 30 },
+    Increment = 1,
+    Suffix = '',
+    CurrentValue = Config.Misc.SpinSpeed,
+    Flag = 'SpinSpeedSlider',
+    Callback = function(Value)
+        Config.Misc.SpinSpeed = Value
+    end,
+})
+
+-- Colors Tab
+local ColorsTab = Window:CreateTab('Color Settings', 4483362458)
+
+-- Visuals Colors
+local VisualsColorsSection = ColorsTab:CreateSection('Visual Colors')
+
+local VisualsColorPicker = ColorsTab:CreateColorPicker({
+    Name = 'Visual Color',
+    Color = Config.Visuals.BoxColor,
+    Flag = 'VisualsColorPicker',
+    Callback = function(Value)
+        Config.Visuals.BoxColor = Value
+        if Config.Visuals.Enabled then
+            Visuals:Toggle(false)
+            wait()
+            Visuals:Toggle(true)
+        end
+    end,
+})
+
+-- Appearance Colors
+local AppearanceColorsSection = ColorsTab:CreateSection('Appearance Colors')
+
+local ArmsColorPicker = ColorsTab:CreateColorPicker({
+    Name = 'Arms Color',
+    Color = Config.Appearance.ArmsColor,
+    Flag = 'ArmsColorPicker',
+    Callback = function(Value)
+        Config.Appearance.ArmsColor = Value
+        if Config.Appearance.Enabled then
+            Appearance:Toggle(false)
+            wait()
+            Appearance:Toggle(true)
+        end
+    end,
+})
+
+local WeaponColorPicker = ColorsTab:CreateColorPicker({
+    Name = 'Weapon Color',
+    Color = Config.Appearance.WeaponColor,
+    Flag = 'WeaponColorPicker',
+    Callback = function(Value)
+        Config.Appearance.WeaponColor = Value
+        if Config.Appearance.Enabled then
+            Appearance:Toggle(false)
+            wait()
+            Appearance:Toggle(true)
+        end
+    end,
+})
+
+-- Event Handlers
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then
+        return
+    end
+
+    if
+        input.UserInputType == Enum.UserInputType.MouseButton2
+        and Config.Targeting.Enabled
+    then
+        Targeting.Target = Targeting:GetClosestTarget()
+        Targeting.Aiming = true
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton2 then
+        Targeting.Aiming = false
+        Targeting.Target = nil
+    end
+end)
+
+-- Main Loop
+RunService.RenderStepped:Connect(function()
+    -- FOV Circle Update
+    FOVCircle.Position = Vector2.new(
+        workspace.CurrentCamera.ViewportSize.X / 2,
+        workspace.CurrentCamera.ViewportSize.Y / 2
+    )
+
+    -- Visuals
+    if Config.Visuals.Enabled then
+        for _, player in pairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer then
+                Visuals:CreateVisual(player)
+            end
+        end
+        Visuals:UpdateVisuals()
+    end
+
+    -- Appearance
+    if Config.Appearance.Enabled then
+        Appearance:ApplyArms()
+        Appearance:ApplyWeapons()
+    else
+        Appearance:RemoveArms()
+        Appearance:RemoveWeapons()
+    end
+
+    -- Targeting
+    if Config.Targeting.Enabled and Targeting.Aiming and Targeting.Target then
+        Targeting:AimAtTarget()
+    end
+
+    -- Spinbot
+    if Config.Misc.Spinbot then
+        Spinbot:Rotate()
+    end
+end)
+
+-- Character Added Events
+LocalPlayer.CharacterAdded:Connect(function()
+    wait(1)
+    if Config.Appearance.Enabled then
+        Appearance:ApplyArms()
+        Appearance:ApplyWeapons()
+    end
+end)
+
+-- Initialisierung
+wait(2) -- Warte bis Spiel geladen
+
+Targeting:UpdateFOV()
+AutoAim:SetupAutoAim()
+
+-- Initial Toggles setzen
+Visuals:Toggle(Config.Visuals.Enabled)
+Appearance:Toggle(Config.Appearance.Enabled)
+
+Rayfield:Notify({
+    Title = 'Game Assistant',
+    Content = 'Assistant loaded successfully!',
+    Duration = 3,
+    Image = 4483362458,
+})
+
+print('Game Assistant loaded successfully!')
+print('Right Mouse - Targeting Assistance')
+print('FOV Circle visible when targeting enabled')
